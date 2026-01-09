@@ -2,12 +2,12 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Backrooms Escape - Commented Version</title>
+    <title>Backrooms Escape - Mobile Supported</title>
     <!-- スマホで表示したときに勝手に拡大縮小されないようにする設定 -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
     <style>
         /* --- ここは見た目（デザイン）の設定です --- */
-        body { margin: 0; overflow: hidden; background-color: #000; color: white; font-family: 'Courier New', Courier, monospace; user-select: none; -webkit-user-select: none; }
+        body { margin: 0; overflow: hidden; background-color: #000; color: white; font-family: 'Courier New', Courier, monospace; user-select: none; -webkit-user-select: none; touch-action: none; }
         
         /* UIレイヤー：ゲーム画面の上に文字や画像を重ねるための透明な板 */
         #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; z-index: 10; }
@@ -281,6 +281,77 @@
             color: cyan; font-weight: bold; font-family: monospace;
             text-shadow: 0 0 5px cyan;
         }
+
+        /* --- モバイル操作用UI --- */
+        #mobile-controls {
+            display: none; /* デフォルトは非表示（JSでスマホ判定して表示） */
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; /* ボタン以外は透過 */
+            z-index: 100;
+        }
+        
+        /* 左下の移動スティック領域 */
+        #joystick-zone {
+            position: absolute;
+            bottom: 50px; left: 50px;
+            width: 150px; height: 150px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            pointer-events: auto;
+            touch-action: none;
+        }
+        
+        #joystick-knob {
+            position: absolute;
+            top: 50%; left: 50%;
+            width: 50px; height: 50px;
+            background: rgba(255, 0, 0, 0.5);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+
+        /* 右側の視点操作エリア（画面右半分透明） */
+        #look-zone {
+            position: absolute;
+            top: 0; right: 0;
+            width: 50%; height: 100%;
+            pointer-events: auto;
+            touch-action: none;
+            z-index: 90;
+        }
+
+        /* アクションボタン群 */
+        .mobile-btn {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.5);
+            border: 2px solid #fff;
+            color: white;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px; font-weight: bold;
+            pointer-events: auto;
+            touch-action: none;
+            user-select: none;
+        }
+        .mobile-btn:active { background: rgba(255, 0, 0, 0.5); transform: scale(0.95); }
+
+        /* 各ボタンの配置 */
+        #btn-mob-fire { bottom: 80px; right: 40px; width: 70px; height: 70px; background: rgba(200, 50, 50, 0.6); font-size: 12px; }
+        #btn-mob-jump { bottom: 160px; right: 50px; width: 50px; height: 50px; }
+        #btn-mob-reload { bottom: 40px; right: 130px; width: 50px; height: 50px; font-size: 12px; }
+        #btn-mob-aim { bottom: 120px; right: 120px; width: 50px; height: 50px; font-size: 12px; }
+        #btn-mob-switch { bottom: 200px; right: 120px; width: 50px; height: 50px; font-size: 12px; }
+
+        /* スマホ判定用メディアクエリ（必要に応じて強制表示） */
+        @media (max-width: 850px) {
+            #mobile-controls { display: block; }
+            /* スマホでは操作説明などを少し隠す */
+            .controls-wrapper { display: none; } 
+            h1 { font-size: 30px; }
+        }
     </style>
     <!-- Three.js などのライブラリ読み込み -->
     <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
@@ -295,6 +366,22 @@
 </head>
 <body>
     <div id="creative-indicator">★ CREATIVE MODE</div>
+
+    <!-- モバイル操作UI -->
+    <div id="mobile-controls">
+        <div id="joystick-zone">
+            <div id="joystick-knob"></div>
+        </div>
+        
+        <!-- 画面右半分を視点移動エリアとして使う -->
+        <div id="look-zone"></div>
+
+        <div id="btn-mob-fire" class="mobile-btn">FIRE</div>
+        <div id="btn-mob-jump" class="mobile-btn">JUMP</div>
+        <div id="btn-mob-reload" class="mobile-btn">RELOAD</div>
+        <div id="btn-mob-aim" class="mobile-btn">AIM</div>
+        <div id="btn-mob-switch" class="mobile-btn">WEAPON</div>
+    </div>
 
     <div id="inventory">
         <h2>PAUSE MENU</h2>
@@ -445,6 +532,11 @@
         let isInventoryOpen = false;
         let isCreativeMode = false; // クリエイティブモードかどうか
 
+        // --- モバイル操作用変数 ---
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 850;
+        let touchStartX = 0, touchStartY = 0;
+        let joyKnobX = 0, joyKnobY = 0;
+
         // ★ 敵キャラ管理用
         const enemyTypes = ['bacteria', 'nathan', 'rubeus', 'orcanos', 'donchan', 'skinstealer'];
         let currentEnemyType = 'bacteria'; // 現在選択中の敵タイプ
@@ -470,7 +562,6 @@
         const TOTAL_SLOTS = 5;
 
         // --- ★ 武器データ (Weapon Data) ★ ---
-        // ここで武器の性能を変更できます
         const WEAPON_DATA = {
             1: { 
                 name: "M16", 
@@ -699,19 +790,60 @@
             });
         }
 
+        // スマホ用ゲーム開始処理
+        function enterGameMobile() {
+            isGameActive = true;
+            isInventoryOpen = false;
+            inventoryDiv.style.display = 'none';
+            if (!hasGameStarted) hasGameStarted = true;
+            
+            menuScreen.style.opacity = '0';
+            setTimeout(() => { if(isGameActive) menuScreen.style.display = 'none'; }, 300);
+            
+            crosshair.style.display = 'block';
+            
+            if (listener.context.state === 'suspended') listener.context.resume();
+            if(bgmSound.buffer && !bgmSound.isPlaying && soundEnabled) bgmSound.play();
+            
+            enemies.forEach(en => {
+                if(en.userData.sound && !en.userData.sound.isPlaying && soundEnabled) en.userData.sound.play();
+            });
+        }
+
+        /* 
         renderer.domElement.addEventListener('touchstart', (e) => {
             e.preventDefault();
             if (!isGameActive && !isInventoryOpen) requestGameLock();
             else if (isGameActive) shootWeapon();
         }, { passive: false });
+        */
         
-        btnStart.addEventListener('click', () => { startLevel(); requestGameLock(); });
-        btnResume.addEventListener('click', requestGameLock);
-        btnReset.addEventListener('click', () => { startLevel(); requestGameLock(); });
+        // --- 修正箇所: btnStartイベント ---
+        btnStart.addEventListener('click', () => { 
+            startLevel(); 
+            if (isMobile) {
+                // スマホならPointerLockせずにゲーム開始状態にする
+                enterGameMobile();
+            } else {
+                requestGameLock(); 
+            }
+        });
+        
+        btnResume.addEventListener('click', () => {
+            if (isMobile) enterGameMobile();
+            else requestGameLock();
+        });
+        
+        btnReset.addEventListener('click', () => { 
+            startLevel(); 
+            if (isMobile) enterGameMobile();
+            else requestGameLock();
+        });
         
         btnRestartGo.addEventListener('click', () => { 
             startLevel(); 
-            requestGameLock(); 
+            if (isMobile) enterGameMobile();
+            else requestGameLock();
         });
 
         btnBackToMenu.addEventListener('click', () => {
@@ -1622,6 +1754,153 @@
                 camera.lookAt(targetPosition);
             }
             renderer.render(scene, camera);
+        }
+
+        // ==========================================
+        // ★ モバイル操作の実装 (Joystick & Touch)
+        // ==========================================
+
+        if (isMobile) {
+            // UIを表示
+            document.getElementById('mobile-controls').style.display = 'block';
+
+            // --- 1. 移動ジョイスティック ---
+            const joyZone = document.getElementById('joystick-zone');
+            const joyKnob = document.getElementById('joystick-knob');
+            const joyRadius = 75; // ゾーンの半径
+
+            joyZone.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                const touch = e.changedTouches[0];
+                touchStartX = touch.clientX;
+                touchStartY = touch.clientY;
+            }, { passive: false });
+
+            joyZone.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                if (!isGameActive) return;
+                const touch = e.changedTouches[0];
+                
+                let dx = touch.clientX - touchStartX;
+                let dy = touch.clientY - touchStartY;
+                
+                // 距離制限
+                const distance = Math.sqrt(dx*dx + dy*dy);
+                if (distance > joyRadius) {
+                    const angle = Math.atan2(dy, dx);
+                    dx = Math.cos(angle) * joyRadius;
+                    dy = Math.sin(angle) * joyRadius;
+                }
+
+                // ノブを動かす
+                joyKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+
+                // キー入力のエミュレーション
+                // 前後
+                if (dy < -20) keys.w = true; else keys.w = false;
+                if (dy > 20)  keys.s = true; else keys.s = false;
+                // 左右
+                if (dx < -20) keys.a = true; else keys.a = false;
+                if (dx > 20)  keys.d = true; else keys.d = false;
+
+                // ダッシュ判定 (スティックを大きく倒したらダッシュ)
+                if (distance > joyRadius * 0.8) keys.shift = true; // PC版のコードに合わせてShift(Crouch)ではなくCtrl(Sprint)にしたい場合はここを変える
+                // ※元のコードだとShiftは「しゃがみ」で遅くなる、Ctrlが「ダッシュ」。
+                // ここでは大きく倒したら「通常移動」、小さくだと「ゆっくり」等の制御も可能ですが、
+                // 今回は「大きく倒したらSprint(Ctrl)」として実装します。
+                if (distance > joyRadius * 0.9) keys.ctrl = true; else keys.ctrl = false;
+
+            }, { passive: false });
+
+            joyZone.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                joyKnob.style.transform = `translate(-50%, -50%)`;
+                keys.w = keys.s = keys.a = keys.d = keys.ctrl = false;
+            }, { passive: false });
+
+
+            // --- 2. 視点移動 (画面右側エリア) ---
+            const lookZone = document.getElementById('look-zone');
+            let lastLookX = 0;
+            let lastLookY = 0;
+
+            lookZone.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                const touch = e.changedTouches[0];
+                lastLookX = touch.clientX;
+                lastLookY = touch.clientY;
+                // 右側タッチで射撃もしたい場合はここで shootWeapon() を呼ぶことも可能
+            }, { passive: false });
+
+            lookZone.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                if (!isGameActive) return;
+                const touch = e.changedTouches[0];
+                
+                const movementX = touch.clientX - lastLookX;
+                const movementY = touch.clientY - lastLookY;
+
+                // 視点回転の適用 (感度は適宜調整)
+                const mobileSens = 0.005;
+                if (player) player.rotation.y -= movementX * mobileSens;
+                cameraPitch += movementY * mobileSens;
+
+                lastLookX = touch.clientX;
+                lastLookY = touch.clientY;
+            }, { passive: false });
+
+
+            // --- 3. アクションボタン ---
+            const btnFire = document.getElementById('btn-mob-fire');
+            const btnJump = document.getElementById('btn-mob-jump');
+            const btnReload = document.getElementById('btn-mob-reload');
+            const btnAim = document.getElementById('btn-mob-aim');
+            const btnSwitch = document.getElementById('btn-mob-switch');
+
+            // 射撃ボタン（長押し対応のためフラグ管理）
+            btnFire.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                e.stopPropagation(); // 視点移動に干渉しないように
+                isTriggerHeld = true;
+                shootWeapon();
+            }, { passive: false });
+            
+            btnFire.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                isTriggerHeld = false;
+            }, { passive: false });
+
+            // ジャンプ
+            btnJump.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                keys.space = true;
+            });
+            btnJump.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                keys.space = false;
+            });
+
+            // リロード
+            btnReload.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                reloadWeapon();
+            });
+
+            // エイム切り替え（トグル式）
+            btnAim.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                isAiming = !isAiming;
+                if (isAiming) crosshair.classList.add('aiming');
+                else crosshair.classList.remove('aiming');
+            });
+
+            // 武器切り替え
+            btnSwitch.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                currentSlot = (currentSlot === 1) ? 2 : 1; // 1と2を交互に
+                updateHotbarUI();
+                attachWeapon();
+            });
         }
 
         window.addEventListener('resize', () => {
